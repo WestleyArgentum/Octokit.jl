@@ -1,26 +1,25 @@
-type Gist <: GitHubType
-    url::Nullable{HttpCommon.URI}
-    forks_url::Nullable{HttpCommon.URI}
-    commits_url::Nullable{HttpCommon.URI}
-    id::Nullable{String}
-    description::Nullable{String}
-    public::Nullable{Bool}
-    owner::Nullable{Owner}
-    user::Nullable{Owner}
-    truncated::Nullable{Bool}
-    comments::Nullable{Int}
-    comments_url::Nullable{HttpCommon.URI}
-    html_url::Nullable{HttpCommon.URI}
-    git_pull_url::Nullable{HttpCommon.URI}
-    git_push_url::Nullable{HttpCommon.URI}
-    created_at::Nullable{Dates.DateTime}
-    updated_at::Nullable{Dates.DateTime}
-    forks::Nullable{Vector{Gist}}
-    files::Nullable{Dict}
-    history::Nullable{Vector{Dict}}
+@ghdef mutable struct Gist
+    url::Union{HTTP.URI, Nothing}
+    forks_url::Union{HTTP.URI, Nothing}
+    commits_url::Union{HTTP.URI, Nothing}
+    id::Union{String, Nothing}
+    description::Union{String, Nothing}
+    public::Union{Bool, Nothing}
+    owner::Union{Owner, Nothing}
+    user::Union{Owner, Nothing}
+    truncated::Union{Bool, Nothing}
+    comments::Union{Int, Nothing}
+    comments_url::Union{HTTP.URI, Nothing}
+    html_url::Union{HTTP.URI, Nothing}
+    git_pull_url::Union{HTTP.URI, Nothing}
+    git_push_url::Union{HTTP.URI, Nothing}
+    created_at::Union{Dates.DateTime, Nothing}
+    updated_at::Union{Dates.DateTime, Nothing}
+    forks::Union{Vector{Gist}, Nothing}
+    files::Union{Dict, Nothing}
+    history::Union{Vector{Dict}, Nothing}
 end
 
-Gist(data::Dict) = json2github(Gist, data)
 Gist(id::AbstractString) = Gist(Dict("id" => id))
 
 namefield(gist::Gist) = gist.id
@@ -32,7 +31,7 @@ namefield(gist::Gist) = gist.id
 # creating #
 #----------#
 
-@api_default gist(gist_obj::Gist; options...) = gist(api::GitHubAPI, name(gist_obj); options...)
+@api_default gist(api::GitHubAPI, gist_obj::Gist; options...) = gist(api::GitHubAPI, name(gist_obj); options...)
 
 @api_default function gist(api::GitHubAPI, gist_obj, sha = ""; options...)
     !isempty(sha) && (sha = "/" * sha)
@@ -53,7 +52,7 @@ end
 # modifying #
 #-----------#
 
-@api_default create_gist(; options...) = Gist(gh_post_json(api, "/gists"; options...))
+@api_default create_gist(api::GitHubAPI; options...) = Gist(gh_post_json(api, "/gists"; options...))
 @api_default edit_gist(api::GitHubAPI, gist; options...) = Gist(gh_patch_json(api, "/gists/$(name(gist))"; options...))
 @api_default delete_gist(api::GitHubAPI, gist; options...) = gh_delete(api, "/gists/$(name(gist))"; options...)
 

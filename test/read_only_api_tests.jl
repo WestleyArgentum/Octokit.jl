@@ -1,6 +1,3 @@
-using GitHub, GitHub.name
-using Base.Test
-
 # The below tests are network-dependent, and actually make calls to GitHub's
 # API. They're all read-only, meaning none of them require authentication.
 
@@ -8,7 +5,7 @@ testuser = Owner("julia-github-test-bot")
 julweb = Owner("JuliaWeb", true)
 ghjl = Repo("JuliaWeb/GitHub.jl")
 testcommit = Commit("3a90e7d64d6184b877f800570155c502b1119c15")
-testuser_pubkey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDVDBxFza4BmQTCTFeTyK"*
+testuser_sshkey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDVDBxFza4BmQTCTFeTyK"*
     "3xT+T98dmiMWXC2lM/esw3MCRHg7cynLWr/jUgjs72DO2nqlCTKI88yd2gcbW5/pBP6NVumc"*
     "pM7eJzZJ3TKKwdGUD49nahncg5imHZUQbCqtQbAYEj+uFfqa9QNm6NkZdAdPdB6dJG2+QEuk"*
     "rIGWKsmihP7vGzRLdebGwng2aNUfdAyVwq5Af4g5qfyRT9MtOXXM/7tDAVfC/g4QjkQ52giG"*
@@ -44,12 +41,17 @@ auth = authenticate(string(circshift(["bcc", "3fc", "03a", "33e",
     # test GitHub.repos
     @test hasghobj(ghjl, first(repos(julweb; auth = auth)))
 
-    # test pubkey retrieval
-    @test first(values(GitHub.pubkeys(testuser; auth = auth)[1])) == testuser_pubkey
+    # test sshkey/gpgkey retrieval
+    @test_broken GitHub.sshkeys(testuser; auth = auth)[1][1]["key"] == testuser_sshkey
+    @test startswith(GitHub.gpgkeys("JuliaTagBot"; auth = auth)[1][1]["raw_key"],
+                     "-----BEGIN PGP PUBLIC KEY BLOCK-----")
 
     # test membership queries
     @test GitHub.check_membership(julweb, testuser; auth = auth)
     @test !GitHub.check_membership("JuliaLang", testuser; auth = auth, public_only=true)
+
+    @test GitHub.isorg(julweb)
+    @test !GitHub.isorg(testuser)
 end
 
 @testset "Repositories" begin
@@ -76,7 +78,7 @@ end
     # test GitHub.file, GitHub.directory, GitHub.readme, GitHub.permalink
     readme_file = file(ghjl, "README.md"; auth = auth)
     src_dir = first(directory(ghjl, "src"; auth = auth))
-    owners_dir = src_dir[findfirst(c -> get(c.path) == "src/owners", src_dir)]
+    owners_dir = src_dir[findfirst(c -> c.path == "src/owners", src_dir)]
     test_sha = "eab14e1ab7b4de848ef6390101b6d40b489d5d08"
     readme_permalink = string(permalink(readme_file, test_sha))
     owners_permalink = string(permalink(owners_dir, test_sha))
@@ -86,7 +88,7 @@ end
     @test hasghobj("src/GitHub.jl", src_dir)
 
     # test GitHub.status, GitHub.statuses
-    @test get(status(ghjl, testcommit; auth = auth).sha) == name(testcommit)
+    @test status(ghjl, testcommit; auth = auth).sha == name(testcommit)
     @test !(isempty(first(statuses(ghjl, testcommit; auth = auth))))
 
     # test GitHub.comment, GitHub.comments
@@ -102,11 +104,11 @@ end
     state_param = Dict("state" => "all")
 
     # test GitHub.pull_request, GitHub.pull_requests
-    @test get(pull_request(ghjl, 37; auth = auth).title) == "Fix dep warnings"
+    @test pull_request(ghjl, 37; auth = auth).title == "Fix dep warnings"
     @test hasghobj(37, first(pull_requests(ghjl; auth = auth, params = state_param)))
 
     # test GitHub.issue, GitHub.issues
-    @test get(issue(ghjl, 40; auth = auth).title) == "Needs test"
+    @test issue(ghjl, 40; auth = auth).title == "Needs test"
     @test hasghobj(40, first(issues(ghjl; auth = auth, params = state_param)))
 end
 
@@ -114,18 +116,18 @@ end
     kc_gists, page_data = gists("KristofferC"; page_limit=1, params=Dict("per_page" => 5), auth = auth)
     @test typeof(kc_gists) == Vector{Gist}
     @test length(kc_gists) != 0
-    @test get(get(kc_gists[1].owner).login) == "KristofferC"
+    @test kc_gists[1].owner.login == "KristofferC"
 
     gist_obj = gist("0cb70f50a28d79905aae907e12cbe58e"; auth = auth)
-    @test length(get(gist_obj.files)) == 2
-    @test get(gist_obj.files)["file1.jl"]["content"] == "Hello World!"
+    @test length(gist_obj.files) == 2
+    @test gist_obj.files["file1.jl"]["content"] == "Hello World!"
 end
 
 @testset "Reviews" begin
     pr = pull_request(ghjl, 59; auth = auth)
     review = first(reviews(ghjl, pr; auth=auth)[1])
 
-    @test get(review.state) == "CHANGES_REQUESTED"
+    @test review.state == "CHANGES_REQUESTED"
 end
 
 @testset "Activity" begin
@@ -168,14 +170,47 @@ testbot_key =
       "MW1IcklTCi0tLS0tRU5EIFJTQSBQUklWQVRFIEtFWS0tLS0tCg=="
 
 @testset "Apps" begin
-    @test get(app(4123; auth=auth).name) == "femtocleaner"
-    @test get(app("femtocleaner"; auth=auth).name) == "femtocleaner"
+    @test app(4123; auth=auth).name == "femtocleaner"
+    @test app("femtocleaner"; auth=auth).name == "femtocleaner"
 
     key = MbedTLS.PKContext()
     MbedTLS.parse_key!(key, base64decode(testbot_key))
     jwt = GitHub.JWTAuth(4484, key)
-    @test get(app(; auth=jwt).name) == "juliawebtestbot"
+    @test app(; auth=jwt).name == "juliawebtestbot"
 
     @test length(installations(jwt)[1]) == 1
 end
 
+@testset "Git Data" begin
+    github_jl = Repo("JuliaWeb/GitHub.jl")
+
+    g = gitcommit(github_jl, "0d9f04ce4be061d3c2b12644316a232c8f889b44"; auth=auth)
+    @test g.tree["sha"] == "e22fee36cb13d9a1850b242f79938458221a5d2e"
+
+    t = tree(github_jl, g.tree["sha"]; auth=auth)
+    for entry in t.tree
+        if entry["path"] == "README.md"
+            @test entry["sha"] == "95c8d1aa2a7b1e6d672e15b67e0df4abbe57dcbe"
+            @test entry["type"] == "blob"
+
+            b = blob(github_jl, entry["sha"]; auth=auth)
+            @test occursin("GitHub.jl", String(base64decode(replace(b.content,"\n" => ""))))
+
+            break
+        end
+    end
+end
+
+@testset "Tags and References" begin
+    # All tags in this repo are lightweight tags which are not covered by the API
+    # Maybe test in the future when we have a use case
+    github_jl = Repo("JuliaWeb/GitHub.jl")
+    ref = reference(github_jl, "heads/master"; auth=auth)
+    @test ref.object["type"] == "commit"
+
+    # Tag API
+    reponame = "QuantEcon/Expectations.jl"
+    version = "v1.0.1"
+    exptag = tag(reponame, version; auth=auth)
+    @test isa(exptag, Tag)
+end

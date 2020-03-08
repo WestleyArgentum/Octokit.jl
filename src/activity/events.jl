@@ -2,7 +2,7 @@
 # WebhookEvent Type #
 #####################
 
-type WebhookEvent
+mutable struct WebhookEvent
     kind::String
     payload::Dict
     repository::Repo
@@ -35,21 +35,21 @@ end
 # Validation Functions #
 ########################
 
-has_event_header(request::HttpCommon.Request) = haskey(request.headers, "X-GitHub-Event")
-event_header(request::HttpCommon.Request) = request.headers["X-GitHub-Event"]
+has_event_header(request::HTTP.Request) = HTTP.hasheader(request, "X-Github-Event")
+event_header(request::HTTP.Request) = HTTP.header(request, "X-Github-Event")
 
-has_sig_header(request::HttpCommon.Request) = haskey(request.headers, "X-Hub-Signature")
-sig_header(request::HttpCommon.Request) = request.headers["X-Hub-Signature"]
+has_sig_header(request::HTTP.Request) = HTTP.hasheader(request, "X-Hub-Signature")
+sig_header(request::HTTP.Request) = HTTP.header(request, "X-Hub-Signature")
 
-function has_valid_secret(request::HttpCommon.Request, secret)
+function has_valid_secret(request::HTTP.Request, secret)
     if has_sig_header(request)
-        secret_sha = "sha1="*bytes2hex(MbedTLS.digest(MbedTLS.MD_SHA1, request.data, secret))
+        secret_sha = "sha1="*bytes2hex(MbedTLS.digest(MbedTLS.MD_SHA1, HTTP.payload(request), secret))
         return sig_header(request) == secret_sha
     end
     return false
 end
 
-function is_valid_event(request::HttpCommon.Request, events)
+function is_valid_event(request::HTTP.Request, events)
     return (has_event_header(request) && in(event_header(request), events))
 end
 
@@ -61,39 +61,27 @@ end
 # EventListener #
 #################
 
-immutable EventListener
-    server::HttpServer.Server
+struct EventListener
+    handle_request
+    repos
+    events
     function EventListener(handle; auth::Authorization = AnonymousAuth(),
                            secret = nothing, events = nothing,
                            repos = nothing, forwards = nothing)
-        if !(isa(forwards, Void))
-            forwards = map(HttpCommon.URI, forwards)
+        if !(isa(forwards, Nothing))
+            forwards = map(HTTP.URI, forwards)
         end
 
-        if !(isa(repos, Void))
+        if !(isa(repos, Nothing))
             repos = map(name, repos)
         end
 
-        server = HttpServer.Server() do request, response
-            try
-                handle_event_request(request, handle; auth = auth,
-                                     secret = secret, events = events,
-                                     repos = repos, forwards = forwards)
-            catch err
-                bt = catch_backtrace()
-                print(STDERR, "SERVER ERROR: ")
-                Base.showerror(STDERR, err, bt)
-                return HttpCommon.Response(500)
-            end
-        end
+        handle_request = request::HTTP.Request ->
+            handle_event_request(request, handle; auth = auth,
+                                 secret = secret, events = events,
+                                 repos = repos, forwards = forwards)
 
-        server.http.events["listen"] = port -> begin
-            println("Listening for GitHub events sent to $port;")
-            println("Whitelisted events: $(isa(events, Void) ? "All" : events)")
-            println("Whitelisted repos: $(isa(repos, Void) ? "All" : repos)")
-        end
-
-        return new(server)
+        return new(handle_request, repos, events)
     end
 end
 
@@ -101,31 +89,46 @@ function handle_event_request(request, handle;
                               auth::Authorization = AnonymousAuth(),
                               secret = nothing, events = nothing,
                               repos = nothing, forwards = nothing)
-    if !(isa(secret, Void)) && !(has_valid_secret(request, secret))
-        return HttpCommon.Response(400, "invalid signature")
+    if !(isa(secret, Nothing)) && !(has_valid_secret(request, secret))
+        return HTTP.Response(400, "invalid signature")
     end
 
-    if !(isa(events, Void)) && !(is_valid_event(request, events))
-        return HttpCommon.Response(400, "invalid event")
+    if !(isa(events, Nothing)) && !(is_valid_event(request, events))
+        return HTTP.Response(204, "event ignored")
     end
 
-    event = event_from_payload!(event_header(request), Requests.json(request))
+    event = event_from_payload!(event_header(request), JSON.parse(IOBuffer(HTTP.payload(request))))
 
-    if !(isa(repos, Void)) && !(from_valid_repo(event, repos))
-        return HttpCommon.Response(400, "invalid repo")
+    if !(isa(repos, Nothing)) && !(from_valid_repo(event, repos))
+        return HTTP.Response(400, "invalid repo")
     end
 
-    if !(isa(forwards, Void))
+    if !(isa(forwards, Nothing))
         for address in forwards
-            Requests.post(address, request)
+            HTTP.post(address, request)
         end
     end
 
     return handle(event)
 end
 
-function Base.run(listener::EventListener, args...; kwargs...)
-    return HttpServer.run(listener.server, args...; kwargs...)
+function Base.run(listener, args...; host = nothing, port = nothing, kwargs...)
+    if host != nothing || port != nothing
+        Base.depwarn("The `host` and `port` keywords are deprecated, use `run(listener, host, port, args...; kwargs...)`", :run)
+    end
+    run(listener, host, port, args...; kwargs...)
+end
+
+function Base.run(listener::EventListener, host::HTTP.IPAddr, port::Int, args...; kwargs...)
+    println("Listening for GitHub events sent to $port;")
+    println("Whitelisted events: $(isa(listener.events, Nothing) ? "All" : listener.events)")
+    println("Whitelisted repos: $(isa(listener.repos, Nothing) ? "All" : listener.repos)")
+    sock = Sockets.listen(Sockets.InetAddr(host, port))
+    run(listener, sock, host, port, args...; kwargs...)
+end
+
+function Base.run(listener::EventListener, sock::Sockets.TCPServer, host::HTTP.IPAddr, port::Int, args...; kwargs...)
+    HTTP.serve(listener.handle_request, host, port; server=sock, kwargs...)
 end
 
 ###################
@@ -138,18 +141,19 @@ const COMMENT_EVENTS = ["commit_comment",
                         "issues",
                         "issue_comment"]
 
-immutable CommentListener
+struct CommentListener
     listener::EventListener
     function CommentListener(handle, trigger::Regex;
                              auth::Authorization = AnonymousAuth(),
                              check_collab::Bool = true,
+                             use_access_token::Bool = false,
                              secret = nothing,
                              repos = nothing,
                              forwards = nothing)
         listener = EventListener(auth=auth, secret=secret,
                                  events=COMMENT_EVENTS, repos=repos,
                                  forwards=forwards) do event
-            return handle_comment(handle, event, auth, trigger, check_collab)
+            return handle_comment(handle, event, auth, trigger, check_collab, use_access_token)
         end
         return new(listener)
     end
@@ -160,7 +164,7 @@ function Base.run(listener::CommentListener, args...; kwargs...)
 end
 
 function handle_comment(handle, event::WebhookEvent, auth::Authorization,
-                        trigger::Regex, check_collab::Bool)
+                        trigger::Regex, check_collab::Bool, use_access_token::Bool)
     kind, payload = event.kind, event.payload
 
     if (kind == "pull_request" || kind == "issues") && payload["action"] == "opened"
@@ -168,21 +172,29 @@ function handle_comment(handle, event::WebhookEvent, auth::Authorization,
     elseif haskey(payload, "comment")
         body_container = payload["comment"]
     else
-        return HttpCommon.Response(204, "payload does not contain comment")
+        return HTTP.Response(204, "payload does not contain comment")
     end
 
     if check_collab
         repo = event.repository
         user = body_container["user"]["login"]
-        if !(iscollaborator(repo, user; auth = auth))
-            return HttpCommon.Response(204, "commenter is not collaborator")
+
+        if use_access_token
+            t = create_access_token(Installation(event.payload["installation"]), auth)
+            iscollab = iscollaborator(repo, user; auth = t)
+        else
+            iscollab = iscollaborator(repo, user; auth = auth)
+        end
+
+        if !iscollab
+            return HTTP.Response(204, "commenter is not collaborator")
         end
     end
 
     trigger_match = match(trigger, body_container["body"])
 
     if trigger_match == nothing
-        return HttpCommon.Response(204, "trigger match not found")
+        return HTTP.Response(204, "trigger match not found")
     end
 
     return handle(event, trigger_match)

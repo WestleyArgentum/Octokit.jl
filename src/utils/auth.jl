@@ -2,15 +2,21 @@
 # Authorization Types #
 #######################
 
-@compat abstract type Authorization end
+abstract type Authorization end
 
-immutable OAuth2 <: Authorization
+# TODO: SecureString on 0.7
+struct OAuth2 <: Authorization
     token::String
 end
 
-immutable AnonymousAuth <: Authorization end
+struct UsernamePassAuth <: Authorization
+    username::String
+    password::String
+end
 
-immutable JWTAuth <: Authorization
+struct AnonymousAuth <: Authorization end
+
+struct JWTAuth <: Authorization
     JWT::String
 end
 
@@ -19,7 +25,7 @@ end
 ####################
 
 function base64_to_base64url(string)
-    replace(replace(replace(string, "=", ""), '+', '-'), '/', '_')
+    replace(replace(replace(string, "=" => ""), '+' => '-'), '/' => '_')
 end
 
 function JWTAuth(app_id::Int, key::MbedTLS.PKContext; iat = now(Dates.UTC), exp_mins = 1)
@@ -32,11 +38,8 @@ function JWTAuth(app_id::Int, key::MbedTLS.PKContext; iat = now(Dates.UTC), exp_
         "exp" => trunc(Int64, Dates.datetime2unix(iat+Dates.Minute(exp_mins))),
         "iss" => app_id
     ))))
-    entropy = MbedTLS.Entropy()
-    rng = MbedTLS.CtrDrbg()
-    MbedTLS.seed!(rng, entropy)
     signature = base64_to_base64url(base64encode(MbedTLS.sign(key, MbedTLS.MD_SHA256,
-        MbedTLS.digest(MbedTLS.MD_SHA256, string(algo,'.',data)), rng)))
+        MbedTLS.digest(MbedTLS.MD_SHA256, string(algo,'.',data)), RNG[])))
     JWTAuth(string(algo,'.',data,'.',signature))
 end
 
@@ -48,10 +51,9 @@ end
 # API Methods #
 ###############
 
-@api_default function authenticate(api::GitHubAPI, token::AbstractString; params = Dict(), options...)
+@api_default function authenticate(api::GitHubAPI, token::AbstractString; options...)
     auth = OAuth2(token)
-    params["access_token"] = auth.token
-    gh_get(api, "/"; params = params, options...)
+    gh_get(api, "/"; auth = auth, options...)
     return auth
 end
 
@@ -71,6 +73,10 @@ function authenticate_headers!(headers, auth::JWTAuth)
     return headers
 end
 
+function authenticate_headers!(headers, auth::UsernamePassAuth)
+    headers["Authorization"] = "Basic $(base64encode(string(auth.username, ':', auth.password)))"
+    return headers
+end
 
 ###################
 # Pretty Printing #
