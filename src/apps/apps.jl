@@ -1,14 +1,13 @@
-type App <: GitHubType
-    id::Nullable{Int}
-    owner::Nullable{Owner}
-    name::Nullable{String}
-    description::Nullable{String}
-    external_url::Nullable{String}
-    html_url::Nullable{String}
+@ghdef mutable struct App
+    id::Union{Int, Nothing}
+    owner::Union{Owner, Nothing}
+    name::Union{String, Nothing}
+    description::Union{String, Nothing}
+    external_url::Union{String, Nothing}
+    html_url::Union{String, Nothing}
 end
 
 namefield(a::App) = a.id
-App(data::Dict) = json2github(App, data)
 
 @api_default function app(api::GitHubAPI; headers = Dict(), kwargs...)
     headers["Accept"] = "application/vnd.github.machine-man-preview+json"

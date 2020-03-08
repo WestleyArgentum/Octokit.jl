@@ -2,23 +2,22 @@
 # Content Type #
 ################
 
-type Content <: GitHubType
-    typ::Nullable{String}
-    filename::Nullable{String}
-    name::Nullable{String}
-    path::Nullable{String}
-    target::Nullable{String}
-    encoding::Nullable{String}
-    content::Nullable{String}
-    sha::Nullable{String}
-    url::Nullable{HttpCommon.URI}
-    git_url::Nullable{HttpCommon.URI}
-    html_url::Nullable{HttpCommon.URI}
-    download_url::Nullable{HttpCommon.URI}
-    size::Nullable{Int}
+@ghdef mutable struct Content
+    typ::Union{String, Nothing}
+    filename::Union{String, Nothing}
+    name::Union{String, Nothing}
+    path::Union{String, Nothing}
+    target::Union{String, Nothing}
+    encoding::Union{String, Nothing}
+    content::Union{String, Nothing}
+    sha::Union{String, Nothing}
+    url::Union{HTTP.URI, Nothing}
+    git_url::Union{HTTP.URI, Nothing}
+    html_url::Union{HTTP.URI, Nothing}
+    download_url::Union{HTTP.URI, Nothing}
+    size::Union{Int, Nothing}
 end
 
-Content(data::Dict) = json2github(Content, data)
 Content(path::AbstractString) = Content(Dict("path" => path))
 
 namefield(content::Content) = content.path
@@ -58,11 +57,11 @@ end
 end
 
 function permalink(content::Content, commit)
-    url = string(get(content.html_url))
-    prefix = get(content.typ) == "file" ? "blob" : "tree"
+    url = string(content.html_url)
+    prefix = something(content.typ, "") == "file" ? "blob" : "tree"
     rgx = Regex(string("/", prefix, "/.*?/"))
     replacement = string("/", prefix, "/", name(commit), "/")
-    return HttpCommon.URI(replace(url, rgx, replacement))
+    return HTTP.URI(replace(url, rgx => replacement))
 end
 
 ###########################
@@ -74,6 +73,6 @@ content_uri(repo, path) = "/repos/$(name(repo))/contents/$(name(path))"
 function build_content_response(json::Dict)
     results = Dict()
     haskey(json, "commit") && setindex!(results, Commit(json["commit"]), "commit")
-    haskey(json, "content") && setindex!(results, Content(json["content"]), "content")
+    haskey(json, "content") && setindex!(results, isnothing(json["content"]) ? nothing : Content(json["content"]), "content")
     return results
 end

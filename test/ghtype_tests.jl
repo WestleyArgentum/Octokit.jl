@@ -1,11 +1,7 @@
-import JSON
-using GitHub, GitHub.name, GitHub.Branch
-using Base.Test
-
 # This file tests various GitHubType constructors. To test for proper Nullable
 # handling, most fields have been removed from the JSON samples used below.
 # Sample fields were selected in order to cover the full range of type behavior,
-# e.g. if the GitHubType has a few Nullable{Dates.DateTime} fields, at least one
+# e.g. if the GitHubType has a few Union{Dates.DateTime, Nothing} fields, at least one
 # of those fields should be present in the JSON sample.
 
 function test_show(g::GitHub.GitHubType)
@@ -16,7 +12,7 @@ function test_show(g::GitHub.GitHubType)
     @test repr(g) == String(take!(tmpio))
 
     tmpio = IOBuffer()
-    showcompact(tmpio, g)
+    show(IOContext(tmpio, :compact => true), g)
 
     @test "$(typeof(g))($(repr(name(g))))" == String(take!(tmpio))
 end
@@ -35,35 +31,43 @@ end
     """
     )
 
-    owner_result = Owner(
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(String(owner_json["login"])),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{Int}(Int(owner_json["id"])),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(HttpCommon.URI(owner_json["html_url"])),
-        Nullable{Dates.DateTime}(Dates.DateTime(chop(owner_json["updated_at"]))),
-        Nullable{Dates.DateTime}(),
-        Nullable{Dates.DateTime}(),
-        Nullable{Bool}(Bool(owner_json["hireable"])),
-        Nullable{Bool}()
+    owner_result = Owner(        
+        nothing,
+        nothing,
+        nothing,
+        String(owner_json["login"]),
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        Int(owner_json["id"]),
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        HTTP.URI(owner_json["html_url"]),
+        Dates.DateTime(chop(owner_json["updated_at"])),
+        nothing,
+        nothing,
+        Bool(owner_json["hireable"]),
+        nothing
     )
 
+    owner_kw = Owner(
+      id         = 1,
+      html_url   = "https://github.com/octocat",
+      login      = "octocat",
+      updated_at = "2008-01-14T04:33:35Z",
+      hireable   = false)
+
     @test Owner(owner_json) == owner_result
+    @test Owner(owner_json) == owner_kw
     @test name(Owner(owner_json["login"])) == name(owner_result)
     @test setindex!(GitHub.github2json(owner_result), nothing, "email") == owner_json
 
@@ -96,37 +100,53 @@ end
     )
 
     repo_result = Repo(
-        Nullable{String}(),
-        Nullable{String}(String(repo_json["full_name"])),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{Owner}(Owner(repo_json["owner"])),
-        Nullable{Repo}(Repo(repo_json["parent"])),
-        Nullable{Repo}(),
-        Nullable{Int}(Int(repo_json["id"])),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{HttpCommon.URI}(HttpCommon.URI(repo_json["url"])),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{Dates.DateTime}(Dates.DateTime(chop(repo_json["pushed_at"]))),
-        Nullable{Dates.DateTime}(),
-        Nullable{Dates.DateTime}(),
-        Nullable{Bool}(),
-        Nullable{Bool}(),
-        Nullable{Bool}(),
-        Nullable{Bool}(),
-        Nullable{Bool}(Bool(repo_json["private"])),
-        Nullable{Bool}(),
-        Nullable{Dict}(repo_json["permissions"])
+        nothing,
+        String(repo_json["full_name"]),
+        nothing,
+        nothing,
+        nothing,
+        Owner(repo_json["owner"]),
+        Repo(repo_json["parent"]),
+        nothing,
+        Int(repo_json["id"]),
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        HTTP.URI(repo_json["url"]),
+        nothing,
+        nothing,
+        Dates.DateTime(chop(repo_json["pushed_at"])),
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        Bool(repo_json["private"]),
+        nothing,
+        repo_json["permissions"]
     )
 
+    repo_kw = Repo(
+        id          = 1296269,
+        owner       = Owner(login= "octocat"),
+        parent      = Repo(name= "test-parent"),
+        full_name   = "octocat/Hello-World",
+        private     = false,
+        url         = "https://api.github.com/repos/octocat/Hello-World",
+        pushed_at   = "2011-01-26T19:06:43Z",
+        permissions = Dict(
+            "admin" => false,
+            "push"  => false,
+            "pull"  => true
+        )
+    )
+    
     @test Repo(repo_json) == repo_result
+    @test Repo(repo_json) == repo_kw
     @test name(Repo(repo_json["full_name"])) == name(repo_result)
     @test setindex!(GitHub.github2json(repo_result), nothing, "language") == repo_json
 
@@ -171,18 +191,18 @@ end
     )
 
     commit_result = Commit(
-        Nullable{String}(String(commit_json["sha"])),
-        Nullable{String}(),
-        Nullable{Owner}(Owner(commit_json["author"])),
-        Nullable{Owner}(),
-        Nullable{Commit}(Commit(commit_json["commit"])),
-        Nullable{HttpCommon.URI}(HttpCommon.URI(commit_json["url"])),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{Vector{Commit}}(map(Commit, commit_json["parents"])),
-        Nullable{Dict}(commit_json["stats"]),
-        Nullable{Vector{Content}}(map(Content, commit_json["files"])),
-        Nullable{Int}()
+        String(commit_json["sha"]),
+        nothing,
+        Owner(commit_json["author"]),
+        nothing,
+        Commit(commit_json["commit"]),
+        HTTP.URI(commit_json["url"]),
+        nothing,
+        nothing,
+        map(Commit, commit_json["parents"]),
+        commit_json["stats"],
+        map(Content, commit_json["files"]),
+        nothing
     )
 
     @test Commit(commit_json) == commit_result
@@ -219,15 +239,15 @@ end
     )
 
     branch_result = Branch(
-        Nullable{String}(String(branch_json["name"])),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{Commit}(Commit(branch_json["commit"])),
-        Nullable{Owner}(Owner(branch_json["user"])),
-        Nullable{Repo}(Repo(branch_json["repo"])),
-        Nullable{Dict}(),
-        Nullable{Dict}(branch_json["protection"])
+        String(branch_json["name"]),
+        nothing,
+        nothing,
+        nothing,
+        Commit(branch_json["commit"]),
+        Owner(branch_json["user"]),
+        Repo(branch_json["repo"]),
+        nothing,
+        branch_json["protection"]
     )
 
     @test Branch(branch_json) == branch_result
@@ -254,22 +274,22 @@ end
     )
 
     comment_result = Comment(
-        Nullable{String}(String(comment_json["body"])),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{Int}(Int(comment_json["id"])),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Dates.DateTime}(Dates.DateTime(chop(comment_json["created_at"]))),
-        Nullable{Dates.DateTime}(),
-        Nullable{HttpCommon.URI}(HttpCommon.URI(comment_json["url"])),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{Owner}(Owner(comment_json["user"]))
+        String(comment_json["body"]),
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        Int(comment_json["id"]),
+        nothing,
+        nothing,
+        nothing,
+        Dates.DateTime(chop(comment_json["created_at"])),
+        nothing,
+        HTTP.URI(comment_json["url"]),
+        nothing,
+        nothing,
+        nothing,
+        Owner(comment_json["user"])
     )
 
     @test Comment(comment_json) == comment_result
@@ -293,19 +313,19 @@ end
     )
 
     content_result = Content(
-        Nullable{String}(String(content_json["type"])),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(String(content_json["path"])),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{HttpCommon.URI}(HttpCommon.URI(content_json["url"])),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{Int}(content_json["size"])
+        String(content_json["type"]),
+        nothing,
+        nothing,
+        String(content_json["path"]),
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        HTTP.URI(content_json["url"]),
+        nothing,
+        nothing,
+        nothing,
+        content_json["size"]
     )
 
     @test Content(content_json) == content_result
@@ -341,19 +361,19 @@ end
     )
 
     status_result = Status(
-        Nullable{Int}(Int(status_json["id"])),
-        Nullable{Int}(),
-        Nullable{String}(),
-        Nullable{String}(String(status_json["description"])),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{HttpCommon.URI}(HttpCommon.URI(status_json["url"])),
-        Nullable{HttpCommon.URI}(),
-        Nullable{Dates.DateTime}(Dates.DateTime(chop(status_json["created_at"]))),
-        Nullable{Dates.DateTime}(),
-        Nullable{Owner}(Owner(status_json["creator"])),
-        Nullable{Repo}(Repo(status_json["repository"])),
-        Nullable{Vector{Status}}(map(Status, status_json["statuses"]))
+        Int(status_json["id"]),
+        nothing,
+        nothing,
+        String(status_json["description"]),
+        nothing,
+        nothing,
+        HTTP.URI(status_json["url"]),
+        nothing,
+        Dates.DateTime(chop(status_json["created_at"])),
+        nothing,
+        Owner(status_json["creator"]),
+        Repo(status_json["repository"]),
+        map(Status, status_json["statuses"])
     )
 
     @test Status(status_json) == status_result
@@ -389,33 +409,33 @@ end
     )
 
     pr_result = PullRequest(
-        Nullable{Branch}(),
-        Nullable{Branch}(Branch(pr_json["head"])),
-        Nullable{Int}(Int(pr_json["number"])),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{Int}(),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{String}(String(pr_json["body"])),
-        Nullable{String}(),
-        Nullable{Dates.DateTime}(Dates.DateTime(chop(pr_json["created_at"]))),
-        Nullable{Dates.DateTime}(),
-        Nullable{Dates.DateTime}(),
-        Nullable{Dates.DateTime}(),
-        Nullable{HttpCommon.URI}(HttpCommon.URI(pr_json["url"])),
-        Nullable{HttpCommon.URI}(),
-        Nullable{Owner}(Owner(pr_json["assignee"])),
-        Nullable{Owner}(),
-        Nullable{Owner}(),
-        Nullable{Dict}(pr_json["milestone"]),
-        Nullable{Dict}(),
-        Nullable{Bool}(),
-        Nullable{Bool}(),
-        Nullable{Bool}(pr_json["locked"])
+        nothing,
+        Branch(pr_json["head"]),
+        Int(pr_json["number"]),
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        String(pr_json["body"]),
+        nothing,
+        Dates.DateTime(chop(pr_json["created_at"])),
+        nothing,
+        nothing,
+        nothing,
+        HTTP.URI(pr_json["url"]),
+        nothing,
+        Owner(pr_json["assignee"]),
+        nothing,
+        nothing,
+        pr_json["milestone"],
+        nothing,
+        nothing,
+        nothing,
+        pr_json["locked"]
     )
 
     @test PullRequest(pr_json) == pr_result
@@ -423,6 +443,43 @@ end
     @test GitHub.github2json(pr_result) == pr_json
 
     test_show(pr_result)
+end
+
+@testset "PullRequestFile" begin
+    prf_json = JSON.parse(
+    """
+    {
+        "sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "filename": "abc",
+        "status": "added",
+        "additions": 0,
+        "deletions": 0,
+        "changes": 0,
+        "blob_url": "https://github.com/nkottary/Example.jl/blob/d0f13113dddaf6bdce58f98f210ae734e4dcd67f/abc",
+        "raw_url": "https://github.com/nkottary/Example.jl/raw/d0f13113dddaf6bdce58f98f210ae734e4dcd67f/abc",
+        "contents_url": "https://api.github.com/repos/nkottary/Example.jl/contents/abc?ref=d0f13113dddaf6bdce58f98f210ae734e4dcd67f"
+    }
+    """
+    )
+
+    prf_result = PullRequestFile(
+        "https://github.com/nkottary/Example.jl/raw/d0f13113dddaf6bdce58f98f210ae734e4dcd67f/abc",
+        "added",
+        nothing,
+        0,
+        "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+        "abc",
+        0,
+        0,
+        "https://github.com/nkottary/Example.jl/blob/d0f13113dddaf6bdce58f98f210ae734e4dcd67f/abc",
+        "https://api.github.com/repos/nkottary/Example.jl/contents/abc?ref=d0f13113dddaf6bdce58f98f210ae734e4dcd67f"
+    )
+
+    @test PullRequestFile(prf_json) == prf_result
+    @test name(PullRequestFile(prf_json["filename"])) == name(prf_result)
+    @test GitHub.github2json(prf_result) == prf_json
+
+    test_show(prf_result)
 end
 
 @testset "Issue" begin
@@ -454,27 +511,27 @@ end
     )
 
     issue_result = Issue(
-        Nullable{Int}(),
-        Nullable{Int}(Int(issue_json["number"])),
-        Nullable{Int}(),
-        Nullable{String}(String(issue_json["title"])),
-        Nullable{String}(),
-        Nullable{String}(),
-        Nullable{Owner}(Owner(issue_json["user"])),
-        Nullable{Owner}(),
-        Nullable{Owner}(),
-        Nullable{Dates.DateTime}(Dates.DateTime(chop(issue_json["created_at"]))),
-        Nullable{Dates.DateTime}(),
-        Nullable{Dates.DateTime}(),
-        Nullable{Vector{Dict}}(Vector{Dict}(issue_json["labels"])),
-        Nullable{Dict}(),
-        Nullable{PullRequest}(PullRequest(issue_json["pull_request"])),
-        Nullable{HttpCommon.URI}(HttpCommon.URI(issue_json["url"])),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{HttpCommon.URI}(),
-        Nullable{Bool}(Bool(issue_json["locked"]))
+        nothing,
+        Int(issue_json["number"]),
+        nothing,
+        String(issue_json["title"]),
+        nothing,
+        nothing,
+        Owner(issue_json["user"]),
+        nothing,
+        nothing,
+        Dates.DateTime(chop(issue_json["created_at"])),
+        nothing,
+        nothing,
+        issue_json["labels"],
+        nothing,
+        PullRequest(issue_json["pull_request"]),
+        HTTP.URI(issue_json["url"]),
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        Bool(issue_json["locked"])
     )
 
     @test Issue(issue_json) == issue_result
@@ -500,15 +557,49 @@ end
     """)
 
     team_result = Team(
-        Nullable{String}(team_json["name"]),
-        Nullable{String}(team_json["description"]),
-        Nullable{String}(team_json["privacy"]),
-        Nullable{String}(team_json["permission"]),
-        Nullable{String}(team_json["slug"]),
-        Nullable{Int}(Int(team_json["id"])))
+        team_json["name"],
+        team_json["description"],
+        team_json["privacy"],
+        team_json["permission"],
+        team_json["slug"],
+        Int(team_json["id"]))
 
     @test name(team_result) == Int(team_json["id"])
     test_show(team_result)
+end
+
+@testset "Webhook" begin
+    hook_json = JSON.parse("""
+      {
+        "id": 12625455,
+        "url": "https://api.github.com/repos/user/Example.jl/hooks/12625455",
+        "test_url": "https://api.github.com/repos/user/Example.jl/hooks/12625455/test",
+        "ping_url": "https://api.github.com/repos/user/Example.jl/hooks/12625455/pings",
+        "name": "web",
+        "events": ["push", "pull_request"],
+        "active": true,
+        "updated_at": "2017-03-14T14:03:16Z",
+        "created_at": "2017-03-14T14:03:16Z"
+      }
+    """)
+
+    hook_result = Webhook(
+        hook_json["id"],
+        HTTP.URI(hook_json["url"]),
+        HTTP.URI(hook_json["test_url"]),
+        HTTP.URI(hook_json["ping_url"]),
+        hook_json["name"],
+        map(String, hook_json["events"]),
+        hook_json["active"],
+        nothing,
+        Dates.DateTime(chop("2017-03-14T14:03:16Z")),
+        Dates.DateTime(chop("2017-03-14T14:03:16Z")))
+
+    @test Webhook(hook_json) == hook_result
+    @test name(Webhook(hook_json["id"])) == name(hook_result)
+    @test setindex!(GitHub.github2json(hook_result), "web", "name") == hook_json
+
+    test_show(hook_result)
 end
 
 @testset "Gist" begin
@@ -598,25 +689,25 @@ end
     )
 
     gist_result = Gist(
-      Nullable{HttpCommon.URI}(HttpCommon.URI(gist_json["url"])),
-      Nullable{HttpCommon.URI}(HttpCommon.URI(gist_json["forks_url"])),
-      Nullable{HttpCommon.URI}(HttpCommon.URI(gist_json["commits_url"])),
-      Nullable{String}(gist_json["id"]),
-      Nullable{String}(gist_json["description"]),
-      Nullable{Bool}(gist_json["public"]),
-      Nullable{Owner}(Owner(gist_json["owner"])),
-      Nullable{Owner}(),
-      Nullable{Bool}(gist_json["truncated"]),
-      Nullable{Int}(gist_json["comments"]),
-      Nullable{HttpCommon.URI}(HttpCommon.URI(gist_json["comments_url"])),
-      Nullable{HttpCommon.URI}(HttpCommon.URI(gist_json["html_url"])),
-      Nullable{HttpCommon.URI}(HttpCommon.URI(gist_json["git_pull_url"])),
-      Nullable{HttpCommon.URI}(HttpCommon.URI(gist_json["git_push_url"])),
-      Nullable{Dates.DateTime}(Dates.DateTime(chop(gist_json["created_at"]))),
-      Nullable{Dates.DateTime}(Dates.DateTime(chop(gist_json["updated_at"]))),
-      Nullable{Vector{Gist}}(map(Gist, gist_json["forks"])),
-      Nullable{Dict}(gist_json["files"]),
-      Nullable{Vector{Dict}}(gist_json["history"]),
+      HTTP.URI(gist_json["url"]),
+      HTTP.URI(gist_json["forks_url"]),
+      HTTP.URI(gist_json["commits_url"]),
+      gist_json["id"],
+      gist_json["description"],
+      gist_json["public"],
+      Owner(gist_json["owner"]),
+      nothing,
+      gist_json["truncated"],
+      gist_json["comments"],
+      HTTP.URI(gist_json["comments_url"]),
+      HTTP.URI(gist_json["html_url"]),
+      HTTP.URI(gist_json["git_pull_url"]),
+      HTTP.URI(gist_json["git_push_url"]),
+      Dates.DateTime(chop(gist_json["created_at"])),
+      Dates.DateTime(chop(gist_json["updated_at"])),
+      map(Gist, gist_json["forks"]),
+      gist_json["files"],
+      gist_json["history"],
     )
 
     @test Gist(gist_json) == gist_result
@@ -704,7 +795,7 @@ end
         "updated_at": "2017-07-08T16:18:44"
       }
     """)
-    
+
     app_result = App(app_json)
     @test name(app_result) == Int(app_json["id"])
 end
@@ -750,4 +841,190 @@ end
 
     review_result = App(review_json)
     @test name(review_result) == Int(review_json["id"])
+end
+
+@testset "Blob" begin
+    blob_json = JSON.parse("""
+    {
+      "content": "Q29udGVudCBvZiB0aGUgYmxvYg==\\n",
+      "encoding": "base64",
+      "url": "https://api.github.com/repos/octocat/example/git/blobs/3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15",
+      "sha": "3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15",
+      "size": 19
+    }
+    """)
+
+    blob_result = Blob(blob_json)
+    @test name(blob_result) == blob_json["sha"]
+end
+
+@testset "Git Commit" begin
+    commit_json = JSON.parse("""
+    {
+      "sha": "7638417db6d59f3c431d3e1f261cc637155684cd",
+      "url": "https://api.github.com/repos/octocat/Hello-World/git/commits/7638417db6d59f3c431d3e1f261cc637155684cd",
+      "author": {
+        "date": "2014-11-07T22:01:45Z",
+        "name": "Scott Chacon",
+        "email": "schacon@gmail.com"
+      },
+      "committer": {
+        "date": "2014-11-07T22:01:45Z",
+        "name": "Scott Chacon",
+        "email": "schacon@gmail.com"
+      },
+      "message": "added readme, because im a good github citizen",
+      "tree": {
+        "url": "https://api.github.com/repos/octocat/Hello-World/git/trees/691272480426f78a0138979dd3ce63b77f706feb",
+        "sha": "691272480426f78a0138979dd3ce63b77f706feb"
+      },
+      "parents": [
+        {
+          "url": "https://api.github.com/repos/octocat/Hello-World/git/commits/1acc419d4d6a9ce985db7be48c6349a0475975b5",
+          "sha": "1acc419d4d6a9ce985db7be48c6349a0475975b5"
+        }
+      ],
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null
+      }
+    }
+    """)
+    commit_result = GitCommit(commit_json)
+    @test name(commit_result) == commit_json["sha"]
+end
+
+@testset "Reference" begin
+    reference_json = JSON.parse("""
+    {
+      "ref": "refs/heads/featureA",
+      "url": "https://api.github.com/repos/octocat/Hello-World/git/refs/heads/featureA",
+      "object": {
+        "type": "commit",
+        "sha": "aa218f56b14c9653891f9e74264a383fa43fefbd",
+        "url": "https://api.github.com/repos/octocat/Hello-World/git/commits/aa218f56b14c9653891f9e74264a383fa43fefbd"
+      }
+    }
+    """)
+
+    reference_result = Reference(reference_json)
+    @test name(reference_result) == "heads/featureA"
+end
+
+@testset "Tag" begin
+    tag_json = JSON.parse("""
+    {
+      "tag": "v0.0.1",
+      "sha": "940bd336248efae0f9ee5bc7b2d5c985887b16ac",
+      "url": "https://api.github.com/repos/octocat/Hello-World/git/tags/940bd336248efae0f9ee5bc7b2d5c985887b16ac",
+      "message": "initial version",
+      "tagger": {
+        "name": "Scott Chacon",
+        "email": "schacon@gmail.com",
+        "date": "2014-11-07T22:01:45Z"
+      },
+      "object": {
+        "type": "commit",
+        "sha": "c3d0be41ecbe669545ee3e94d31ed9a4bc91ee3c",
+        "url": "https://api.github.com/repos/octocat/Hello-World/git/commits/c3d0be41ecbe669545ee3e94d31ed9a4bc91ee3c"
+      },
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null
+      }
+    }
+    """)
+
+    tag_result = Tag(tag_json)
+    @test name(tag_result) == tag_json["sha"]
+end
+
+@testset "Tree" begin
+    tree_json = JSON.parse("""
+    {
+      "sha": "9fb037999f264ba9a7fc6274d15fa3ae2ab98312",
+      "url": "https://api.github.com/repos/octocat/Hello-World/trees/9fb037999f264ba9a7fc6274d15fa3ae2ab98312",
+      "tree": [
+        {
+          "path": "file.rb",
+          "mode": "100644",
+          "type": "blob",
+          "size": 30,
+          "sha": "44b4fc6d56897b048c772eb4087f854f46256132",
+          "url": "https://api.github.com/repos/octocat/Hello-World/git/blobs/44b4fc6d56897b048c772eb4087f854f46256132"
+        },
+        {
+          "path": "subdir",
+          "mode": "040000",
+          "type": "tree",
+          "sha": "f484d249c660418515fb01c2b9662073663c242e",
+          "url": "https://api.github.com/repos/octocat/Hello-World/git/blobs/f484d249c660418515fb01c2b9662073663c242e"
+        },
+        {
+          "path": "exec_file",
+          "mode": "100755",
+          "type": "blob",
+          "size": 75,
+          "sha": "45b983be36b73c0788dc9cbcb76cbb80fc7bb057",
+          "url": "https://api.github.com/repos/octocat/Hello-World/git/blobs/45b983be36b73c0788dc9cbcb76cbb80fc7bb057"
+        }
+      ],
+      "truncated": false
+    }
+    """)
+
+    tree_result = Tree(tree_json)
+    @test name(tree_result) == tree_json["sha"]
+end
+
+@testset "Release" begin
+    release_json = JSON.parse("""
+    {
+      "url": "https://api.github.com/repos/octocat/Hello-World/releases/1",
+      "html_url": "https://github.com/octocat/Hello-World/releases/v1.0.0",
+      "assets_url": "https://api.github.com/repos/octocat/Hello-World/releases/1/assets",
+      "upload_url": "https://uploads.github.com/repos/octocat/Hello-World/releases/1/assets{?name,label}",
+      "tarball_url": "https://api.github.com/repos/octocat/Hello-World/tarball/v1.0.0",
+      "zipball_url": "https://api.github.com/repos/octocat/Hello-World/zipball/v1.0.0",
+      "id": 1,
+      "node_id": "MDc6UmVsZWFzZTE=",
+      "tag_name": "v1.0.0",
+      "target_commitish": "master",
+      "name": "v1.0.0",
+      "body": "Description of the release",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2013-02-27T19:35:32Z",
+      "published_at": "2013-02-27T19:35:32Z",
+      "author": {
+        "login": "octocat",
+        "id": 1,
+        "node_id": "MDQ6VXNlcjE=",
+        "avatar_url": "https://github.com/images/error/octocat_happy.gif",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/octocat",
+        "html_url": "https://github.com/octocat",
+        "followers_url": "https://api.github.com/users/octocat/followers",
+        "following_url": "https://api.github.com/users/octocat/following{/other_user}",
+        "gists_url": "https://api.github.com/users/octocat/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/octocat/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/octocat/subscriptions",
+        "organizations_url": "https://api.github.com/users/octocat/orgs",
+        "repos_url": "https://api.github.com/users/octocat/repos",
+        "events_url": "https://api.github.com/users/octocat/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/octocat/received_events",
+        "type": "User",
+        "site_admin": false
+      },
+      "assets": [
+      ]
+    }
+    """)
+
+    release_result = Release(release_json)
+    @test name(release_result) == release_json["id"]
 end
