@@ -2,36 +2,35 @@
 # Owner Type #
 ##############
 
-type Owner <: GitHubType
-    typ::Nullable{String}
-    email::Nullable{String}
-    name::Nullable{String}
-    login::Nullable{String}
-    bio::Nullable{String}
-    company::Nullable{String}
-    location::Nullable{String}
-    gravatar_id::Nullable{String}
-    id::Nullable{Int}
-    public_repos::Nullable{Int}
-    owned_private_repos::Nullable{Int}
-    total_private_repos::Nullable{Int}
-    public_gists::Nullable{Int}
-    private_gists::Nullable{Int}
-    followers::Nullable{Int}
-    following::Nullable{Int}
-    collaborators::Nullable{Int}
-    blog::Nullable{HttpCommon.URI}
-    url::Nullable{HttpCommon.URI}
-    html_url::Nullable{HttpCommon.URI}
-    updated_at::Nullable{Dates.DateTime}
-    created_at::Nullable{Dates.DateTime}
-    date::Nullable{Dates.DateTime}
-    hireable::Nullable{Bool}
-    site_admin::Nullable{Bool}
+@ghdef mutable struct Owner
+    typ::Union{String, Nothing}
+    email::Union{String, Nothing}
+    name::Union{String, Nothing}
+    login::Union{String, Nothing}
+    bio::Union{String, Nothing}
+    company::Union{String, Nothing}
+    location::Union{String, Nothing}
+    gravatar_id::Union{String, Nothing}
+    id::Union{Int, Nothing}
+    public_repos::Union{Int, Nothing}
+    owned_private_repos::Union{Int, Nothing}
+    total_private_repos::Union{Int, Nothing}
+    public_gists::Union{Int, Nothing}
+    private_gists::Union{Int, Nothing}
+    followers::Union{Int, Nothing}
+    following::Union{Int, Nothing}
+    collaborators::Union{Int, Nothing}
+    blog::Union{HTTP.URI, Nothing}
+    url::Union{HTTP.URI, Nothing}
+    html_url::Union{HTTP.URI, Nothing}
+    updated_at::Union{Dates.DateTime, Nothing}
+    created_at::Union{Dates.DateTime, Nothing}
+    date::Union{Dates.DateTime, Nothing}
+    hireable::Union{Bool, Nothing}
+    site_admin::Union{Bool, Nothing}
 end
 
-Owner(data::Dict) = json2github(Owner, data)
-Owner(login::AbstractString, isorg = false) = Owner(Dict("login" => login, "typ" => isorg ? "User" : "Organization"))
+Owner(login::AbstractString, isorg = false) = Owner(Dict("login" => login, "type" => isorg ? "Organization" : "User"))
 
 namefield(owner::Owner) = owner.login
 
@@ -41,7 +40,7 @@ typprefix(isorg) = isorg ? "orgs" : "users"
 # Owner API #
 #############
 
-isorg(owner::Owner) = get(owner.typ, "") == "Organization"
+isorg(owner::Owner) = something(owner.typ, "") == "Organization"
 
 @api_default owner(api::GitHubAPI, owner_obj::Owner; options...) = owner(api, name(owner_obj), isorg(owner_obj); options...)
 
@@ -57,7 +56,7 @@ end
 
 @api_default function check_membership(api::GitHubAPI, org, user; public_only = false, options...)
     scope = public_only ? "public_members" : "members"
-    resp = gh_get(api, "/orgs/$(name(org))/$scope/$(name(user))"; handle_error = false, allow_redirects = false,  options...)
+    resp = gh_get(api, "/orgs/$(name(org))/$scope/$(name(user))"; handle_error = false, allowredirects = false, options...)
     if resp.status == 204
         return true
     elseif resp.status == 404
@@ -90,8 +89,22 @@ end
 end
 
 @api_default function pubkeys(api::GitHubAPI, owner; options...)
-    results, page_data = gh_get_paged_json(api, "/users/$(name(owner))/keys"; options...)
+    Base.depwarn("`pubkeys` is deprecated in favor of `sshkeys`, " *
+        "which return a vector of keys, instead of a Dict from key-id to key.", :pubkeys)
+    results, page_data = sshkeys(api, owner; options...)
     output = Dict{Int,String}([(key["id"], key["key"]) for key in results])
+    return output, page_data
+end
+
+@api_default function sshkeys(api::GitHubAPI, owner; options...)
+    results, page_data = gh_get_paged_json(api, "/users/$(name(owner))/keys"; options...)
+    output = convert(Vector{Dict{String,Any}}, results)
+    return output, page_data
+end
+
+@api_default function gpgkeys(api::GitHubAPI, owner; options...)
+    results, page_data = gh_get_paged_json(api, "/users/$(name(owner))/gpg_keys"; options...)
+    output = convert(Vector{Dict{String,Any}}, results)
     return output, page_data
 end
 
